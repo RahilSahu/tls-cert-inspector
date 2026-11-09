@@ -46,11 +46,12 @@ def _flatten(name_tuple) -> str:
     return ", ".join(parts)
 
 
-def parse_cert(cert: dict, now: datetime | None = None) -> dict:
+def parse_cert(cert: dict, now: datetime | None = None, warn_days: int = 30) -> dict:
     """Extract the useful fields from an ssl certificate dict.
 
     Separated from the network code so it can be unit tested with a
-    fixture certificate.
+    fixture certificate. warn_days sets how far ahead an expiring
+    certificate triggers a warning (default 30 days).
     """
     now = now or datetime.now(timezone.utc)
     fmt = "%b %d %H:%M:%S %Y %Z"
@@ -66,7 +67,7 @@ def parse_cert(cert: dict, now: datetime | None = None) -> dict:
         problems.append(f"Certificate expired on {not_after.date().isoformat()}")
     if not_before and now < not_before:
         problems.append(f"Certificate is not valid until {not_before.date().isoformat()}")
-    if days is not None and 0 <= days <= 30:
+    if days is not None and 0 <= days <= warn_days:
         warnings.append(f"Certificate expires in {days} days, renew soon")
     subject = _flatten(cert.get("subject"))
     issuer = _flatten(cert.get("issuer"))
@@ -83,7 +84,7 @@ def parse_cert(cert: dict, now: datetime | None = None) -> dict:
     }
 
 
-def inspect(host: str, port: int = 443, timeout: float = 10.0, server_name: str | None = None) -> CertReport:
+def inspect(host: str, port: int = 443, timeout: float = 10.0, server_name: str | None = None, warn_days: int = 30) -> CertReport:
     report = CertReport(host=host, port=port)
     sni = server_name or host
 
@@ -94,7 +95,7 @@ def inspect(host: str, port: int = 443, timeout: float = 10.0, server_name: str 
                 report.tls_version = tls.version()
                 cipher = tls.cipher()
                 report.cipher = cipher[0] if cipher else None
-                parsed = parse_cert(tls.getpeercert())
+                parsed = parse_cert(tls.getpeercert(), warn_days=warn_days)
     except ssl.SSLCertVerificationError as exc:
         # Verification failed (expired, self-signed, wrong host, ...).
         # Reconnect without verification so we can still describe the cert.
@@ -105,7 +106,7 @@ def inspect(host: str, port: int = 443, timeout: float = 10.0, server_name: str 
                 report.tls_version = tls.version()
                 cipher = tls.cipher()
                 report.cipher = cipher[0] if cipher else None
-                parsed = parse_cert(tls.getpeercert(binary_form=False) or _binary_cert_to_dict(tls.getpeercert(binary_form=True), host, port))
+                parsed = parse_cert(tls.getpeercert(binary_form=False) or _binary_cert_to_dict(tls.getpeercert(binary_form=True), host, port), warn_days=warn_days)
     report.subject = parsed["subject"]
     report.issuer = parsed["issuer"]
     report.serial = parsed["serial"]
@@ -163,13 +164,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--port", type=int, default=None)
     parser.add_argument("--server-name", default=None, help="SNI name, defaults to the host")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--warn-days", type=int, default=30,
+                        help="Warn when the certificate expires within this many days (default: 30)")
     parser.add_argument("--timeout", type=float, default=10.0)
     args = parser.parse_args(argv)
 
     host, _, port_text = args.host.partition(":")
     port = args.port or (int(port_text) if port_text else 443)
     try:
-        report = inspect(host, port=port, timeout=args.timeout, server_name=args.server_name)
+        report = inspect(host, port=port, timeout=args.timeout, server_name=args.server_name, warn_days=args.warn_days)
     except (OSError, ssl.SSLError, ValueError) as exc:
         print(f"Error: could not inspect {host}:{port}: {exc}", file=sys.stderr)
         return 2

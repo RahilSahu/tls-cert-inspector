@@ -23,6 +23,14 @@ python3 tls_inspect.py example.com:8443
 python3 tls_inspect.py 203.0.113.10 --server-name example.com --json
 ```
 
+The expiry warning fires when a certificate has 30 days or fewer
+left. Use `--warn-days` to change that horizon, for example to get a
+90-day heads-up on a fleet you only review quarterly:
+
+```bash
+python3 tls_inspect.py example.com --warn-days 90
+```
+
 Example output:
 
 ```text

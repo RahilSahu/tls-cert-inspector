@@ -36,6 +36,20 @@ class ParseCertTests(unittest.TestCase):
         parsed = parse_cert(cert, now=NOW)
         self.assertTrue(any("expires in" in w for w in parsed["warnings"]))
 
+    def test_custom_warn_days_threshold(self):
+        # 60 days out: silent at the default 30-day threshold, but
+        # warns when the caller asks for a 90-day horizon.
+        cert = dict(BASE_CERT, notAfter="Jul 31 23:59:59 2026 GMT")
+        self.assertEqual(parse_cert(cert, now=NOW)["warnings"], [])
+        parsed = parse_cert(cert, now=NOW, warn_days=90)
+        self.assertTrue(any("expires in" in w for w in parsed["warnings"]))
+
+    def test_short_warn_days_stays_quiet(self):
+        # 19 days out: warns by default, but not with a 7-day horizon.
+        cert = dict(BASE_CERT, notAfter="Jun 20 23:59:59 2026 GMT")
+        parsed = parse_cert(cert, now=NOW, warn_days=7)
+        self.assertEqual(parsed["warnings"], [])
+
     def test_self_signed_is_a_problem(self):
         cert = dict(BASE_CERT)
         cert["issuer"] = cert["subject"]
