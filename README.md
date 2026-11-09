@@ -1,4 +1,5 @@
 # TLS Certificate Inspector
+![tests](https://github.com/RahilSahu/tls-cert-inspector/actions/workflows/tests.yml/badge.svg)
 
 A small, zero-dependency Python tool that connects to a host, completes
 a TLS handshake, and reports the certificate details that matter in a
